@@ -164,7 +164,7 @@ points at the two ways forward (export to markdown, or implement the class).
   sample pages' review dates; add `--fail-on-warn` in your fork), and the sensitive scan.
 - `.github/workflows/canon-sync.yml` runs nightly and on demand: syncs the contract named by
   the `CONTEXT_CONTRACT` repository variable (default: the markdown sample) into `export/`,
-  opens a pull request with `peter-evans/create-pull-request@v6` when `generated_at` moved,
+  opens a pull request with `peter-evans/create-pull-request@v8` when `generated_at` moved,
   commits a heartbeat when only `last_synced_at` moved, and runs `check_freshness.py` even
   when the sync failed so a broken sync shows up as a failed job with the mirror's real age.
 - `.github/PULL_REQUEST_TEMPLATE.md` asks the one review question that matters for a
