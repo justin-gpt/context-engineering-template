@@ -51,8 +51,8 @@ Step-by-step instructions per platform. Each section assumes you have the approv
 
 1. Create a private repository from this template (Use this template → Create). Delete the sample canon or keep it as `examples/`.
 2. Settings → Secrets: `NOTION_TOKEN` (or the knowledge base's token) from an integration that has access to the canon root page only. Settings → Variables: `CONTEXT_CONTRACT` = the contract path in the repository.
-3. Run `python scripts/canon_sync.py --contract <path> --out export/` locally once; commit `export/`.
-4. Enable `.github/workflows/canon-sync.yml` (nightly cron) and `validate.yml` (pull requests). Protect `main`; allow the sync bot to open pull requests; decide whether heartbeat-only commits may bypass review or arrive as pull requests.
+3. Run `python scripts/canon_sync.py --contract <path> --out export/` locally once; commit `export/`. Then run `canon-sync.yml` once by hand (Actions → canon-sync → Run workflow) and check the result.
+4. Turn the nightly schedule on: Settings → Variables: `CANON_SYNC_ENABLED` = `true` (the schedule is a no-op until this is set, so a fresh copy never commits heartbeats before it is configured). `validate.yml` runs on every push and pull request from the start. Protect `main`; allow the sync bot to open pull requests (Settings → Actions → "Allow GitHub Actions to create and approve pull requests"); decide whether heartbeat-only commits may bypass review or arrive as pull requests.
 5. Reviewers ask one question on sync pull requests: is this a sane export? Content is never edited in the mirror.
 
 **GitLab:** `.gitlab-ci.yml` with a scheduled pipeline running the same three commands; masked CI/CD variables for the token; a merge request opened with `glab` or the API. **Bitbucket:** Pipelines schedule, repository variables, pull request via the API. **Azure Repos:** Azure Pipelines cron trigger, variable group, pull request via `az repos pr create`.

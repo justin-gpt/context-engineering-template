@@ -14,6 +14,10 @@
 # mirror's real age, so a broken sync is visible instead of silently going stale.
 #
 # Setup:
+#   vars.CANON_SYNC_ENABLED     set to "true" to turn the nightly schedule on. Until then the
+#                               schedule is a no-op and only manual runs (workflow_dispatch)
+#                               execute, so a fresh copy of the template never commits
+#                               heartbeats before anyone has configured it.
 #   secrets.NOTION_TOKEN        Notion integration token (only for source_of_truth: notion)
 #   secrets.ALERT_WEBHOOK_URL   optional; check_freshness.py posts here when stale
 #   vars.CONTEXT_CONTRACT       path to the contract; defaults to the markdown sample
@@ -44,6 +48,8 @@ env:
 
 jobs:
   sync:
+    # Scheduled runs are opt-in; manual runs always execute.
+    if: github.event_name == 'workflow_dispatch' || vars.CANON_SYNC_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

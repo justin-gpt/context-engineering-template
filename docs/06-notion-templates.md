@@ -23,7 +23,7 @@ A published sample workspace shows both patterns built in Notion with fictional 
 1. Duplicate the root into a private teamspace. Rename the companies.
 2. On the Canon Index, replace every page ID in the contract with the IDs of your duplicated pages (copy from each page's URL). Update `source_root` and `rules.gap_tracker`.
 3. Fix property types on the duplicated databases if any imported as text; the select options must equal the contract's slugs plus `new_page`, `decision_log`, `unsure`.
-4. Create an internal integration with access to the canon root only; put its token in your CI secret store as `NOTION_TOKEN`; set `source_of_truth: notion` in the contract committed to your mirror repository; run `scripts/canon_sync.py` once by hand, then enable the nightly workflow.
+4. Create an internal integration with access to the canon root only; put its token in your CI secret store as `NOTION_TOKEN`; set `source_of_truth: notion` in the contract committed to your mirror repository; run `scripts/canon_sync.py` once by hand, then turn the nightly workflow on by setting the `CANON_SYNC_ENABLED` repository variable to `true`.
 5. For the consultancy pattern, give each client its own teamspace or page tree with its own permissions and a separate portal root. Never put a client hub under HQ.
 
 ## Why the samples live in their own tree

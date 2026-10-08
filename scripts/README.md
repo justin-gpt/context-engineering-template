@@ -162,7 +162,8 @@ points at the two ways forward (export to markdown, or implement the class).
 - `.github/workflows/validate.yml` runs on push and pull request: tests, contract validation,
   a sample sync (gates fail the job; warnings do not, so the template keeps passing after the
   sample pages' review dates; add `--fail-on-warn` in your fork), and the sensitive scan.
-- `.github/workflows/canon-sync.yml` runs nightly and on demand: syncs the contract named by
+- `.github/workflows/canon-sync.yml` runs nightly (once the `CANON_SYNC_ENABLED` repository
+  variable is `true`; manual runs always work) and on demand: syncs the contract named by
   the `CONTEXT_CONTRACT` repository variable (default: the markdown sample) into `export/`,
   opens a pull request with `peter-evans/create-pull-request@v8` when `generated_at` moved,
   commits a heartbeat when only `last_synced_at` moved, and runs `check_freshness.py` even
