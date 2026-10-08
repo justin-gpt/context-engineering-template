@@ -13,7 +13,7 @@ The reference implementations ran on Notion, GitHub, GitHub Actions and Supabase
 
 | Path | What it is |
 | --- | --- |
-| `docs/` | The architecture: start here, the business pattern, the consultancy pattern, the platform guide, operating cadence, security and isolation, the Notion templates, Mermaid diagrams, and the file formats |
+| `docs/` | The architecture: start here, the business pattern, the consultancy pattern, the platform guide, operating cadence, security and isolation, the Notion templates, the setup runbook, Mermaid diagrams, and the file formats |
 | `templates/contracts/` | The context contract (markdown and Notion forms), the client context contract, the project manifest |
 | `templates/canon/` | Nine sample canon pages with frontmatter — a working markdown source for the sync and the model for a Notion canon |
 | `templates/client-hub/` | The four client canon page templates for the consultancy pattern |
@@ -44,7 +44,7 @@ python scripts/validate_contract.py path/to/context-contract.yaml
 python scripts/scan_sensitive.py . --denylist /somewhere/outside/the/repo/.sensitive-denylist
 ```
 
-Then read `docs/00-start-here.md` and let the setup skill interview you:
+Then read `docs/00-start-here.md` (or follow `docs/07-setup-runbook.md`, the single-session setup path with a done-when test for every step) and let the setup skill interview you:
 
 ```bash
 claude plugin marketplace add justin-gpt/context-engineering-template

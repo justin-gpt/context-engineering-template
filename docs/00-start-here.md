@@ -48,6 +48,7 @@ The consultancy pattern is the business pattern repeated inside every client bou
 
 ```bash
 # 1. Read the docs in order: 00 → 01 (→ 02 for consultancies) → 03 → 05.
+#    In a hurry? docs/07-setup-runbook.md is the single-session path with a done-when test per step.
 # 2. Try the sync on the sample canon (fictional company, markdown source):
 pip install -r requirements.txt
 python scripts/canon_sync.py --contract templates/contracts/context-contract.yaml --out export/
