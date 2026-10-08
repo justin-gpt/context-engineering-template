@@ -1,0 +1,22 @@
+{
+  "generated_at": "2026-10-08T16:22:42Z",
+  "last_synced_at": "2026-10-08T16:22:42Z",
+  "contract_version": 2,
+  "source_of_truth": "markdown",
+  "pages_synced": [
+    "company_readme",
+    "positioning",
+    "messaging",
+    "sales_storyboard",
+    "icp_personas",
+    "competitive_battlecards",
+    "glossary",
+    "brand_voice",
+    "operating_rules"
+  ],
+  "pages_missing": [],
+  "bundle_bytes": 30865,
+  "validation": "passed",
+  "warnings": [],
+  "content_hash": "84f0ecf9248bbe6d15df18ae6c19790d422d9a98ff6b582e43f8d1043af3716a"
+}

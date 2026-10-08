@@ -1,0 +1,8 @@
+{
+  "name": "context-curator",
+  "version": "1.0.0",
+  "description": "Owner-gated curation of the company canon: draft pages from evidence, migrate a legacy wiki by disposition table, check a session for drift. Never grounds a page.",
+  "author": { "name": "Justin GPT", "url": "https://justingpt.ai" },
+  "license": "MIT",
+  "keywords": ["canon", "curation", "migration", "owner-gated"]
+}

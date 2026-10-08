@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/context-engineering/schemas/gap-tracker.schema.json",
+  "title": "Canon gap (one row of the gap tracker)",
+  "description": "One row of the gap tracker, the only write path agents have into the canon process. An agent that finds a missing, stale or conflicting fact files a row here instead of editing a page; humans triage it. Property names carry spaces because they are the column headers of templates/databases/canon-gaps.csv and the property names of the Notion database, so a CSV row or an API payload validates without renaming. Reference: docs/formats.md section 6 and templates/databases/schemas.md.",
+  "$comment": "Suggested page must be either a canonical slug (a key of the governing contract's canonical_pages) or one of new_page, decision_log, unsure. The schema can only check the shape of a slug; the sync cross-checks the value against the contract so the database and the reporting skill cannot drift apart. Other rules that live in the skill, not the schema: dedup-check open rows for the same term or page before inserting; one row per gap; definitional failures route to glossary; confirm to the user with the row URL.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["Gap", "Where it hurt", "Suggested page", "Status", "Reporter", "Context link"],
+  "properties": {
+    "Gap": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 300,
+      "pattern": "^[^\\r\\n]+$",
+      "description": "The title: one line, leading with the term or fact ('Customer count: README said 400+ while the sales storyboard said 350'). No line breaks; detail goes in Where it hurt."
+    },
+    "Where it hurt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The task that failed or degraded, with a date ('Outbound email draft on 2026-09-26 cited both numbers in one paragraph; the draft was held'). The date lets triage judge urgency and lets a later reader find the run."
+    },
+    "Suggested page": {
+      "type": "string",
+      "anyOf": [
+        {
+          "enum": ["new_page", "decision_log", "unsure"],
+          "description": "new_page: no existing page should hold this. decision_log: an owner must decide, not document. unsure: the agent could not tell; a human routes it."
+        },
+        {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "A canonical slug from the governing contract (company_readme, glossary, ...). Definitional failures route to glossary."
+        }
+      ],
+      "description": "Where the fix belongs: a canonical slug, or new_page, decision_log or unsure. Validated against the contract's canonical_pages by the sync."
+    },
+    "Status": {
+      "type": "string",
+      "enum": ["new", "accepted", "patched", "rejected"],
+      "description": "Agents create rows as new and never change Status. Humans move a row to accepted (the gap is real and owned), patched (the page was fixed; cite the change log) or rejected (not a gap, with a reason in the row)."
+    },
+    "Reporter": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Who filed it: a person, or 'Claude (<task>)' for autonomous runs ('Claude (outbound-draft)'). Naming the task makes recurring gaps from one skill visible."
+    },
+    "Context link": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9+.-]*:",
+      "description": "URL of the canon page with the problem, or of the artifact where it surfaced. Triage opens this first; a row without a link is a rumour."
+    },
+    "Reported": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "Created time, set automatically by the database. Optional in this schema because a CSV import row does not carry it; an exported row does."
+    }
+  }
+}

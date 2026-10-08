@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/context-engineering/schemas/meta.schema.json",
+  "title": "Export metadata (export/meta.json)",
+  "description": "Written by the sync on every run: the two clocks plus the manifest of what was synced. Consumers read this file first to decide whether the mirror is fresh enough to use and which pages are missing. Reference: docs/formats.md section 5.",
+  "$comment": "Two clocks. generated_at advances only when exported content changed; it drives the pull request and the version bump, and consumers cite it ('canon as of 2026-10-08'). last_synced_at advances on every successful run and is the freshness heartbeat; alert when now() minus last_synced_at passes the contract's freshness.stale_after_days. generated_at is therefore always less than or equal to last_synced_at, a check the sync performs because the schema cannot compare two values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generated_at",
+    "last_synced_at",
+    "contract_version",
+    "source_of_truth",
+    "pages_synced",
+    "pages_missing",
+    "bundle_bytes",
+    "validation",
+    "warnings"
+  ],
+  "properties": {
+    "generated_at": {
+      "$ref": "#/$defs/isoDateTime",
+      "description": "UTC timestamp of the last run that changed exported content. Unchanged content keeps the previous value, so a diff of meta.json alone tells you whether the canon moved."
+    },
+    "last_synced_at": {
+      "$ref": "#/$defs/isoDateTime",
+      "description": "UTC timestamp of the last successful run, changed or not. This is the heartbeat the freshness view and the stale alert read."
+    },
+    "contract_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "contract_version of the contract that produced this export, copied verbatim so a consumer can refuse a mirror built from a contract shape it does not understand."
+    },
+    "source_of_truth": {
+      "type": "string",
+      "enum": ["notion", "markdown", "confluence"],
+      "description": "Copied from the contract: which source system the mirror was generated from."
+    },
+    "pages_synced": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/slug" },
+      "description": "Slugs exported with content on this run, in contract order. A slug in canonical_pages must appear here or in pages_missing; appearing in neither fails the sync."
+    },
+    "pages_missing": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/slug" },
+      "description": "Slugs the sync could not read (permission, deleted page, network). Each still gets a placeholder file whose header says available: false, so consumers see the gap instead of silently missing a page."
+    },
+    "bundle_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Size of export/bundle.json in bytes. The sync warns above 150 KB (153600 bytes): a canon that large is copying depth it should only point to."
+    },
+    "validation": {
+      "type": "string",
+      "enum": ["passed", "failed"],
+      "description": "Result of the validation gates (contract schema, headers, markers on grounded pages, slug coverage). The reference sync is atomic: a run that fails a gate writes nothing and leaves the previous export intact, so a committed meta.json normally reads passed. A sync that chooses to write a failed meta.json instead must set this to failed, and consumers must not use a mirror whose validation is failed."
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Human-readable warnings that did not fail the run: bundle over 150 KB, a page past its next_review, a page body that looks like it restates a metric value. Empty when clean."
+    },
+    "content_hash": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional digest (sha256 hex recommended) over the exported content. Lets a consumer or an embedding job confirm nothing changed without comparing files, and is how generated_at is decided."
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "A canonical page slug as declared in the contract."
+    },
+    "isoDateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "An RFC 3339 timestamp with an explicit offset; the sync writes UTC with a Z suffix (2026-10-08T02:00:14Z)."
+    }
+  }
+}

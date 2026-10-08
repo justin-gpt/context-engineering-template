@@ -1,0 +1,119 @@
+# Nightly sync of the canon into the read-only mirror (export/), gated by a pull request.
+#
+# How the two clocks drive this workflow:
+#   - generated_at changed  -> exported content changed -> a pull request on branch
+#     canon-sync/update so a human can answer "is this a sane export?" before merge.
+#   - only last_synced_at changed -> heartbeat only -> committed straight to the branch the
+#     workflow ran on (there is nothing to review; the heartbeat is what check_freshness.py
+#     reads). If your default branch is protected, either allow the Actions bot to bypass
+#     the protection or delete the "Record heartbeat" step and accept that the heartbeat
+#     only lands when a content PR merges.
+#   - nothing changed -> nothing to do.
+# The last step runs check_freshness.py even when the sync failed. Because a failed sync
+# writes nothing, that step then reads the committed meta.json and fails the job with the
+# mirror's real age, so a broken sync is visible instead of silently going stale.
+#
+# Setup:
+#   secrets.NOTION_TOKEN        Notion integration token (only for source_of_truth: notion)
+#   secrets.ALERT_WEBHOOK_URL   optional; check_freshness.py posts here when stale
+#   vars.CONTEXT_CONTRACT       path to the contract; defaults to the markdown sample
+#   Repository settings -> Actions -> "Allow GitHub Actions to create and approve pull
+#   requests" must be on for peter-evans/create-pull-request to open the PR.
+name: canon-sync
+
+on:
+  schedule:
+    - cron: "17 2 * * *" # nightly, 02:17 UTC (off the hour to avoid the top-of-hour rush)
+  workflow_dispatch:
+    inputs:
+      contract:
+        description: Contract path (defaults to vars.CONTEXT_CONTRACT, then the markdown sample)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: canon-sync
+  cancel-in-progress: false
+
+env:
+  CONTEXT_CONTRACT: ${{ inputs.contract || vars.CONTEXT_CONTRACT || 'templates/contracts/context-contract.yaml' }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate the contract
+        run: python scripts/validate_contract.py "$CONTEXT_CONTRACT"
+
+      - name: Sync the canon into export/
+        id: sync
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: python scripts/canon_sync.py --contract "$CONTEXT_CONTRACT" --out export
+
+      # Runs even when the sync failed. After a successful sync the working tree holds a
+      # fresh meta.json and this passes; after a failed sync nothing was written, so this
+      # reads the committed meta.json and exits 2 (STALE) once the mirror is older than
+      # freshness.stale_after_days, which fails the job loudly.
+      - name: Check mirror freshness
+        if: always()
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: python scripts/check_freshness.py export/meta.json --contract "$CONTEXT_CONTRACT" --webhook-env ALERT_WEBHOOK_URL
+
+      - name: Decide what changed
+        id: changes
+        run: |
+          changed_files="$(git status --porcelain -- export | awk '{print $2}')"
+          new_generated_at="$(python -c 'import json; print(json.load(open("export/meta.json"))["generated_at"])')"
+          new_last_synced_at="$(python -c 'import json; print(json.load(open("export/meta.json"))["last_synced_at"])')"
+          old_generated_at="$(git show HEAD:export/meta.json 2>/dev/null | python -c 'import json, sys; print(json.load(sys.stdin).get("generated_at", ""))' 2>/dev/null || true)"
+
+          if [ -z "$changed_files" ]; then
+            mode=none
+          elif [ "$new_generated_at" != "$old_generated_at" ] || [ "$changed_files" != "export/meta.json" ]; then
+            mode=content
+          else
+            mode=heartbeat
+          fi
+          echo "mode=$mode"
+          {
+            echo "mode=$mode"
+            echo "generated_at=$new_generated_at"
+            echo "last_synced_at=$new_last_synced_at"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the pull request
+        if: steps.changes.outputs.mode == 'content'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: canon-sync/update
+          add-paths: export/**
+          commit-message: "canon-sync: canon as of ${{ steps.changes.outputs.generated_at }}"
+          title: "canon-sync: canon as of ${{ steps.changes.outputs.generated_at }}"
+          body-path: .github/PULL_REQUEST_TEMPLATE.md
+          labels: canon-sync
+          delete-branch: true
+
+      - name: Record heartbeat
+        if: steps.changes.outputs.mode == 'heartbeat'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add export/meta.json
+          git commit -m "canon-sync: heartbeat ${{ steps.changes.outputs.last_synced_at }} (content unchanged)"
+          git push

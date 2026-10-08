@@ -1,0 +1,5 @@
+# Runtime and test dependencies for scripts/ and tests/. Nothing else is needed.
+pyyaml>=6.0,<7
+requests>=2.31,<3
+jsonschema>=4.18,<5
+pytest>=7.4

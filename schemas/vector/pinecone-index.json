@@ -1,0 +1,109 @@
+{
+  "_comment": "Context layer vector store on Pinecone, implementing schemas/vector/metadata-contract.md. This file is documentation shaped as data: 'index' is the create-index request, 'metadata_schema' lists the fields every vector carries, and the two examples show an upsert and a filtered query. Placeholders are in angle brackets; vectors are truncated to three numbers and carry 1536 in practice. Fictional tenants only (Globex Logistics is CLIENT-001).",
+
+  "index": {
+    "_comment": "Serverless index. One index for the whole context layer; tenants are separated by namespace (below). Cosine metric to match the other stores in this folder. Dimension must equal the embedding model's output and is fixed at creation: changing models means a new index and a full re-embed.",
+    "name": "context-layer",
+    "dimension": 1536,
+    "metric": "cosine",
+    "spec": {
+      "serverless": {
+        "cloud": "<aws|gcp|azure>",
+        "region": "<region, for example us-east-1>"
+      }
+    },
+    "deletion_protection": "enabled",
+    "tags": {
+      "purpose": "context-layer",
+      "metadata_contract": "schemas/vector/metadata-contract.md"
+    }
+  },
+
+  "namespaces": {
+    "_comment": "One namespace per tenant_id, named exactly as the tenant_id ('company' for the single-company pattern, the client contract's client_id such as 'CLIENT-001' for a consultancy). A query runs inside one namespace, so a tenant cannot be reached by forgetting a filter; the tenant_id metadata field is still written and filtered on (rule 1) as the second lock. Audience is decided per index, not per namespace: an index that client users can query holds only client_shared and public chunks; client_private chunks for the delivery team go in a separate index (or are not embedded). Delete a tenant by deleting its namespace at offboarding.",
+    "strategy": "one namespace per tenant_id",
+    "examples": ["company", "CLIENT-001", "CLIENT-002"]
+  },
+
+  "vector_id": {
+    "_comment": "Deterministic id: {source_system}:{source_id}#{chunk_index}. Re-ingestion is an upsert. Serverless indexes delete by id or by whole namespace, not by metadata filter, so to remove one page list the ids by prefix ('notion:p-readme#') and delete that list. That is why the id starts with the source, not with a random uuid.",
+    "pattern": "{source_system}:{source_id}#{chunk_index}",
+    "example": "notion:p-readme#0"
+  },
+
+  "metadata_schema": {
+    "_comment": "Every metadata field is filterable on a serverless index, so keep the set flat and small (40 KB per vector including the text). Pinecone metadata has no null: omit canonical_slug for depth sources instead of writing null. Timestamps are stored twice: ISO 8601 string for display, epoch seconds as a number for range filters ($gte, $lt). 'embedding' is the vector's values, not metadata; 'id' is the vector id, not metadata.",
+    "fields": [
+      { "name": "tenant_id",        "type": "string",  "required": true,  "filterable": true,  "why": "Isolation key, equal to the namespace name. Filtered on every query even though the namespace already isolates it." },
+      { "name": "source_system",    "type": "string",  "required": true,  "filterable": true,  "enum": ["notion", "markdown", "confluence", "crm", "calls", "files"], "why": "Where the chunk came from; lets a query restrict to canon pages." },
+      { "name": "source_id",        "type": "string",  "required": true,  "filterable": true,  "why": "Page, file or record id; with source_system identifies the source for replace-and-delete." },
+      { "name": "source_url",       "type": "string",  "required": true,  "filterable": false, "why": "The citation returned with every match." },
+      { "name": "canonical_slug",   "type": "string",  "required": false, "filterable": true,  "why": "Contract slug for canonical pages; omitted (not null) for depth sources." },
+      { "name": "status",           "type": "string",  "required": true,  "filterable": true,  "enum": ["grounded", "draft", "stub", "deprecated"], "why": "Copied from the contract. Queries default to grounded; deprecated chunks are deleted, never present." },
+      { "name": "visibility",       "type": "string",  "required": true,  "filterable": true,  "enum": ["company_internal", "client_private", "client_shared", "public"], "why": "Copied from the contract. Filtered with $in against the caller's scope." },
+      { "name": "content_hash",     "type": "string",  "required": true,  "filterable": true,  "why": "sha256 hex of text. Dedupe lookup before embedding." },
+      { "name": "chunk_index",      "type": "number",  "required": true,  "filterable": true,  "why": "Position within the source; enables neighbour expansion." },
+      { "name": "text",             "type": "string",  "required": true,  "filterable": false, "why": "The chunk content, returned with the match so no second fetch is needed. Counts toward the 40 KB metadata limit." },
+      { "name": "token_count",      "type": "number",  "required": false, "filterable": true,  "why": "Tokens in text, for prompt budgeting." },
+      { "name": "generated_at",     "type": "string",  "required": true,  "filterable": true,  "why": "ISO 8601; when the content last changed. A moved generated_at means the source's chunks are replaced." },
+      { "name": "generated_at_epoch", "type": "number", "required": true, "filterable": true,  "why": "Same clock as a number so range filters work." },
+      { "name": "last_synced_at",   "type": "string",  "required": true,  "filterable": true,  "why": "ISO 8601 heartbeat." },
+      { "name": "last_synced_at_epoch", "type": "number", "required": true, "filterable": true, "why": "Heartbeat as a number; max per namespace is the tenant's freshness." },
+      { "name": "heading_path",     "type": "string",  "required": false, "filterable": false, "why": "Extras from the metadata object are flattened to top-level keys because Pinecone metadata is flat. Never secrets, never personal data." }
+    ]
+  },
+
+  "example_upsert": {
+    "_comment": "One vector per chunk, upserted into the tenant's namespace. values is truncated here.",
+    "namespace": "CLIENT-001",
+    "vectors": [
+      {
+        "id": "notion:p-readme#0",
+        "values": [0.0123, -0.0456, 0.0789],
+        "metadata": {
+          "tenant_id": "CLIENT-001",
+          "source_system": "notion",
+          "source_id": "p-readme",
+          "source_url": "https://example.com/hubs/client-001/client_readme",
+          "canonical_slug": "client_readme",
+          "status": "grounded",
+          "visibility": "client_shared",
+          "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+          "chunk_index": 0,
+          "text": "Client README > Who we are. Globex Logistics engagement readme, chunk 0 ...",
+          "token_count": 412,
+          "generated_at": "2026-10-07T02:00:00Z",
+          "generated_at_epoch": 1791338400,
+          "last_synced_at": "2026-10-08T02:00:00Z",
+          "last_synced_at_epoch": 1791424800,
+          "heading_path": "Client README > Who we are"
+        }
+      }
+    ]
+  },
+
+  "example_query": {
+    "_comment": "Rule 1 in Pinecone terms: namespace = tenant, and the filter names tenant_id, visibility and status every time. The retrieval service builds the filter from the caller's identity; the prompt never sees it. Read source_url from each match's metadata and cite it.",
+    "namespace": "CLIENT-001",
+    "vector": [0.0123, -0.0456, 0.0789],
+    "topK": 8,
+    "includeMetadata": true,
+    "includeValues": false,
+    "filter": {
+      "tenant_id": { "$eq": "CLIENT-001" },
+      "visibility": { "$in": ["client_shared", "public"] },
+      "status": { "$eq": "grounded" }
+    }
+  },
+
+  "example_delete_source": {
+    "_comment": "Removing a deprecated or changed page: list ids by prefix inside the namespace, then delete them. Run this before inserting the new chunks of a changed page so a query never sees old and new together.",
+    "namespace": "CLIENT-001",
+    "list": { "prefix": "notion:p-readme#" },
+    "delete": { "ids": ["notion:p-readme#0", "notion:p-readme#1"] }
+  },
+
+  "freshness": {
+    "_comment": "Pinecone has no aggregate query. Keep the per-tenant heartbeat where the sync writes it (export/meta.json or a small table) and check it before querying; or query the namespace for one vector with includeMetadata and read last_synced_at_epoch from any chunk, since the sync updates all chunks of a tenant in one run."
+  }
+}

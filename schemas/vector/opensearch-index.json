@@ -1,0 +1,171 @@
+{
+  "_comment": "Context layer vector store on OpenSearch (self-managed, Amazon OpenSearch Service, or OpenSearch Serverless vector collections), implementing schemas/vector/metadata-contract.md. 'index_body' is the body of PUT /context-chunks (strip the _comment keys and the example_* sections first). k-NN with HNSW and cosine similarity to match the other stores in this folder. Fictional tenants only (Globex Logistics is CLIENT-001).",
+
+  "isolation_note": "Three layers, use at least two. (1) Every query carries a bool filter on tenant_id, visibility and status, built by the retrieval service from the caller's identity (rule 1). (2) A filtered alias per tenant (example below) so a tenant's client can only address an alias that already carries its tenant filter. (3) With the Security plugin, document-level security on the reader role (DLS query {\"term\": {\"tenant_id\": \"CLIENT-001\"}}) enforces the boundary inside the cluster regardless of what the query says; for a regulated client, use one index per tenant. Audience is decided per index: an index client users can query holds only client_shared and public chunks.",
+
+  "index_name": "context-chunks",
+
+  "index_body": {
+    "settings": {
+      "index": {
+        "knn": true,
+        "knn.algo_param.ef_search": 100,
+        "number_of_shards": 1,
+        "number_of_replicas": 1
+      }
+    },
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "id":             { "type": "keyword" },
+        "tenant_id":      { "type": "keyword" },
+        "source_system":  { "type": "keyword" },
+        "source_id":      { "type": "keyword" },
+        "source_url":     { "type": "keyword", "index": false },
+        "canonical_slug": { "type": "keyword" },
+        "status":         { "type": "keyword" },
+        "visibility":     { "type": "keyword" },
+        "content_hash":   { "type": "keyword" },
+        "chunk_index":    { "type": "integer" },
+        "text":           { "type": "text", "analyzer": "standard" },
+        "embedding": {
+          "type": "knn_vector",
+          "dimension": 1536,
+          "method": {
+            "name": "hnsw",
+            "space_type": "cosinesimil",
+            "engine": "lucene",
+            "parameters": {
+              "ef_construction": 128,
+              "m": 16
+            }
+          }
+        },
+        "token_count":    { "type": "integer" },
+        "generated_at":   { "type": "date", "format": "strict_date_optional_time" },
+        "last_synced_at": { "type": "date", "format": "strict_date_optional_time" },
+        "metadata":       { "type": "object", "enabled": false }
+      }
+    }
+  },
+
+  "mapping_notes": {
+    "_comment": "Why each field is mapped as it is.",
+    "dynamic strict": "A chunk with an unexpected field is rejected instead of silently adding a mapping; the metadata contract is the whole set of fields.",
+    "id": "Also used as the document _id (deterministic {source_system}:{source_id}#{chunk_index}) so indexing is an upsert; kept as a keyword field too because _id cannot be aggregated.",
+    "tenant_id, status, visibility": "keyword so term filters are exact and cheap; these three are on every query.",
+    "source_url": "Stored and returned but not indexed; it is the citation, nobody searches it.",
+    "text": "Analyzed text for hybrid (BM25 + k-NN) retrieval; returned with the match.",
+    "embedding": "knn_vector, 1536 dimensions, HNSW, cosinesimil. The lucene engine supports efficient (pre-)filtering, which is what makes the filtered query below return a full k. faiss also supports efficient filtering; nmslib does not and would post-filter. Changing dimensions means a new index and a full re-embed.",
+    "generated_at, last_synced_at": "date fields; max(last_synced_at) per tenant_id is the freshness heartbeat (aggregation below).",
+    "metadata": "object with enabled false: stored verbatim, never indexed, so extras (heading_path, title) cannot collide with the strict mapping. Never secrets, never personal data."
+  },
+
+  "example_document": {
+    "_comment": "PUT /context-chunks/_doc/notion:p-readme#0 (URL-encode the id). The vector is truncated here.",
+    "id": "notion:p-readme#0",
+    "tenant_id": "CLIENT-001",
+    "source_system": "notion",
+    "source_id": "p-readme",
+    "source_url": "https://example.com/hubs/client-001/client_readme",
+    "canonical_slug": "client_readme",
+    "status": "grounded",
+    "visibility": "client_shared",
+    "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "chunk_index": 0,
+    "text": "Client README > Who we are. Globex Logistics engagement readme, chunk 0 ...",
+    "embedding": [0.0123, -0.0456, 0.0789],
+    "token_count": 412,
+    "generated_at": "2026-10-07T02:00:00Z",
+    "last_synced_at": "2026-10-08T02:00:00Z",
+    "metadata": { "heading_path": "Client README > Who we are", "title": "Client README" }
+  },
+
+  "example_query_bool_filter": {
+    "_comment": "POST /context-chunks/_search. The classic shape: k-NN in must, the three governance filters in filter. Note that with this shape the k-NN clause returns its k nearest per shard first and the filter is applied afterwards, so fewer than k rows can come back when a tenant is small; prefer example_query_efficient_filter when the engine supports it. _source names the citation fields.",
+    "size": 8,
+    "_source": ["id", "source_url", "canonical_slug", "status", "text", "generated_at"],
+    "query": {
+      "bool": {
+        "filter": [
+          { "term":  { "tenant_id": "CLIENT-001" } },
+          { "terms": { "visibility": ["client_shared", "public"] } },
+          { "term":  { "status": "grounded" } }
+        ],
+        "must": [
+          {
+            "knn": {
+              "embedding": {
+                "vector": [0.0123, -0.0456, 0.0789],
+                "k": 8
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+
+  "example_query_efficient_filter": {
+    "_comment": "Same governance filter placed inside the knn clause. With the lucene or faiss engine the filter is applied during the HNSW search, so all k results satisfy tenant_id AND visibility AND status. This is the recommended shape.",
+    "size": 8,
+    "_source": ["id", "source_url", "canonical_slug", "status", "text", "generated_at"],
+    "query": {
+      "knn": {
+        "embedding": {
+          "vector": [0.0123, -0.0456, 0.0789],
+          "k": 8,
+          "filter": {
+            "bool": {
+              "filter": [
+                { "term":  { "tenant_id": "CLIENT-001" } },
+                { "terms": { "visibility": ["client_shared", "public"] } },
+                { "term":  { "status": "grounded" } }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "example_tenant_alias": {
+    "_comment": "POST /_aliases. A filtered alias per tenant; the tenant's retrieval client is given only the alias name, never the index name. The query filter is still required (rule 1).",
+    "actions": [
+      {
+        "add": {
+          "index": "context-chunks",
+          "alias": "context-chunks-client-001",
+          "filter": { "term": { "tenant_id": "CLIENT-001" } }
+        }
+      }
+    ]
+  },
+
+  "example_delete_source": {
+    "_comment": "POST /context-chunks/_delete_by_query. Removing a deprecated or changed page before indexing its new chunks, so a query never sees old and new together.",
+    "query": {
+      "bool": {
+        "filter": [
+          { "term": { "tenant_id": "CLIENT-001" } },
+          { "term": { "source_system": "notion" } },
+          { "term": { "source_id": "p-readme" } }
+        ]
+      }
+    }
+  },
+
+  "example_freshness_aggregation": {
+    "_comment": "POST /context-chunks/_search. The heartbeat per tenant; compare with the contract's freshness.stale_after_days before the first query of a run.",
+    "size": 0,
+    "aggs": {
+      "by_tenant": {
+        "terms": { "field": "tenant_id", "size": 100 },
+        "aggs": {
+          "last_synced_at": { "max": { "field": "last_synced_at" } },
+          "content_as_of":  { "max": { "field": "generated_at" } }
+        }
+      }
+    }
+  }
+}

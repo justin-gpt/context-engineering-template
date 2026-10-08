@@ -1,0 +1,57 @@
+# Runs on every push and pull request: tests, contract validation, a sample sync of the
+# markdown canon, and the sensitive-string scan. This is the pull-request gate for the
+# repository's own code and templates; the nightly mirror has its own workflow
+# (canon-sync.yml).
+name: validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the test suite
+        run: python -m pytest -q
+
+      - name: Validate contracts and manifests
+        run: python scripts/validate_contract.py templates/contracts/*.yaml
+
+      # Gates (bad contract, missing header, a grounded page with an open marker) fail this
+      # step. Warnings do not, because one of them is date-driven: the sample's monthly pages
+      # carry a next_review date, and a template repository should keep passing CI after it.
+      # In your own fork, add --fail-on-warn so a page past its review date blocks the merge,
+      # exactly as it should for a real canon.
+      - name: Sample sync of the markdown canon
+        run: python scripts/canon_sync.py --contract templates/contracts/context-contract.yaml --out /tmp/export
+
+      # The denylist (real people, clients, code names) is never committed. Teams keep it in
+      # the SENSITIVE_DENYLIST repository secret, one term per line; the step writes it to a
+      # temporary file OUTSIDE the checkout so the scan never sees the list itself. Secrets
+      # are not available to pull requests from forks, so those runs scan with the built-in
+      # patterns only.
+      - name: Scan for sensitive strings
+        env:
+          SENSITIVE_DENYLIST: ${{ secrets.SENSITIVE_DENYLIST }}
+        run: |
+          if [ -n "$SENSITIVE_DENYLIST" ]; then
+            printf '%s\n' "$SENSITIVE_DENYLIST" > "$RUNNER_TEMP/sensitive-denylist"
+            python scripts/scan_sensitive.py . --denylist "$RUNNER_TEMP/sensitive-denylist"
+          else
+            echo "No SENSITIVE_DENYLIST secret available; scanning with the built-in patterns only."
+            python scripts/scan_sensitive.py .
+          fi

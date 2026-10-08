@@ -1,0 +1,14 @@
+# Local secrets and local-only lists. Never commit these.
+.env
+.sensitive-denylist
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# NOTE: export/ is deliberately NOT ignored. The generated mirror is the point of the
+# repository: agents install it, and the nightly pull request is how changes to it
+# get reviewed.

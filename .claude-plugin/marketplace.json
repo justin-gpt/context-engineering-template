@@ -1,0 +1,44 @@
+{
+  "name": "context-engineering",
+  "description": "Plugins for running a governed context layer for AI agents: load canon by contract, report gaps instead of editing, curate pages owner-gated, keep clients isolated, and set the whole thing up by interview.",
+  "version": "1.0.0",
+  "owner": {
+    "name": "Justin GPT",
+    "url": "https://justingpt.ai"
+  },
+  "plugins": [
+    {
+      "name": "context-engineering-setup",
+      "source": "./skills/context-engineering-setup",
+      "description": "Interview-driven setup: recommends a platform stack from what you already run, then walks the canon, contract, gap tracker, catalog, sync and (for consultancies) client hubs step by step.",
+      "version": "1.0.0",
+      "category": "setup",
+      "tags": ["context-engineering", "setup", "notion", "obsidian", "confluence", "consultancy"]
+    },
+    {
+      "name": "company-context",
+      "source": "./marketplace/plugins/company-context",
+      "description": "Read side, installed broadly: load the company canon by contract (bundle first, live fallback), assert only grounded pages, cite URLs, fetch numbers from Layer 3, and report gaps instead of editing.",
+      "version": "1.0.0",
+      "category": "context",
+      "tags": ["canon", "context-layer", "read-only", "gap-tracker"]
+    },
+    {
+      "name": "context-curator",
+      "source": "./marketplace/plugins/context-curator",
+      "description": "Write side, for a few curators: draft canon pages from evidence with CONFIRM markers, migrate a legacy wiki by disposition table, and check a session for drift against the Handbook. Owner-gated; never grounds a page itself.",
+      "version": "1.0.0",
+      "category": "context",
+      "tags": ["canon", "curation", "migration", "owner-gated"],
+      "dependencies": ["company-context"]
+    },
+    {
+      "name": "client-context",
+      "source": "./marketplace/plugins/client-context",
+      "description": "Consultancy pattern: load one client's context contract and project manifest, refuse every source outside the client boundary, draft status rows as Agent (draft), and run the publishing checklist before anything reaches a portal.",
+      "version": "1.0.0",
+      "category": "context",
+      "tags": ["consultancy", "client-isolation", "contract", "manifest", "portal"]
+    }
+  ]
+}

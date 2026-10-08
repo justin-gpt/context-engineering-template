@@ -1,0 +1,8 @@
+{
+  "name": "company-context",
+  "version": "1.0.0",
+  "description": "Load the company canon by contract, assert only grounded pages, cite URLs, fetch numbers from Layer 3, report gaps instead of editing.",
+  "author": { "name": "Justin GPT", "url": "https://justingpt.ai" },
+  "license": "MIT",
+  "keywords": ["canon", "context-layer", "read-only", "gap-tracker"]
+}

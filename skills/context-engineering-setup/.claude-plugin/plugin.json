@@ -1,0 +1,8 @@
+{
+  "name": "context-engineering-setup",
+  "version": "1.0.0",
+  "description": "Interview-driven setup of a governed context layer for AI agents, platform agnostic.",
+  "author": { "name": "Justin GPT", "url": "https://justingpt.ai" },
+  "license": "MIT",
+  "keywords": ["context-engineering", "canon", "setup", "notion", "obsidian", "confluence", "consultancy"]
+}

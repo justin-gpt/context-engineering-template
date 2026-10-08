@@ -1,0 +1,76 @@
+# Project manifest — one per deployment (consultancy pattern)
+#
+# Narrows the client context contract to the pages, systems, skills, writes and approvals ONE
+# deployment needs, and names the rollback before the deployment goes to canary. Versioned with
+# the release. Reusable skills and plugins are global releases; the overlay skill carries only
+# this client's rules and context pointers. Client configuration and credentials never enter
+# the reusable package.
+#
+# Fictional client and placeholder IDs throughout.
+
+deployment_id: DEPLOY-001
+client_id: CLIENT-001
+engagement_id: ENG-001
+project_ids: [PROJ-001]
+agent_id: AGENT-lead-router
+release: "1.2.0"
+risk_class: draft_write              # read_only | draft_write | controlled_write | external_action
+owner: engagement_lead
+backup_owner: agent_operator
+
+context:
+  client_contract_version: 1
+  project_manifest_version: 1
+  allowed_page_ids:
+    - "<client_readme page-id>"
+    - "<operating_rules page-id>"
+    - "<glossary_metrics page-id>"
+  allowed_data_sources:
+    - "crm:client-001:leads (read)"
+    - "crm:client-001:territories (read)"
+    - "warehouse:client-001:lead_routing_weekly (read)"
+  prohibited_sources:
+    - cross_client_content
+    - unapproved_drafts
+    - consultancy_hq
+
+skills:
+  - id: SKILL-lead-routing-core           # reusable, global
+    version: "2.0.1"
+  - id: SKILL-client-001-routing-overlay  # client rules and context pointers only
+    version: "0.3.0"
+
+plugins:
+  - id: PLUGIN-crm-tools
+    version: "1.4.2"
+
+integrations:
+  - id: INT-client-001-crm
+    credential_reference: "secret-manager://clients/client-001/crm-service-identity"   # a reference, never a secret
+    read_scope: "contacts, companies, deals (client tenant only)"
+    write_scope: "contacts.proposed_owner (review field only)"
+
+writes:
+  allowed_surfaces:
+    - "crm contacts.proposed_owner"
+    - "<work-items-database-id>  (rows marked Agent (draft))"
+  allowed_operations:
+    - propose_owner
+    - queue_exception
+    - create_draft
+    - report_gap
+  approval_required:
+    - assign_owner_of_record
+    - change_routing_rule
+    - publish_to_client
+    - external_action
+
+evaluation:
+  suite: EVAL-lead-routing-v3
+  minimum_score: 0.95
+  last_passed: 2026-10-03
+
+rollback:
+  previous_release: "1.1.4"
+  kill_switch_owner: agent_operator
+  disable_steps: "runbook://client-001/lead-router/disable"

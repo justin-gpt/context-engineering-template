@@ -1,0 +1,4 @@
+Gap,Where it hurt,Suggested page,Status,Reporter,Context link
+"Customer count: README said 400+ while the sales storyboard said 350","Outbound email draft on 2026-09-26 cited both numbers in one paragraph; the draft was held and nothing was sent.",company_readme,patched,Claude (outbound-draft),https://example.com/canon/company_readme
+"Activation has no canonical definition; three teams use three","Weekly leadership brief on 2026-09-19 could not state an activation rate without picking a definition, so it labeled the figure unconfirmed.",glossary,accepted,Claude (weekly-brief),https://example.com/canon/glossary
+"An alternative appears in CRM loss reasons with no battlecard","Battlecard refresh run on 2026-09-20 found the alternative in 9 closed-lost opportunities and no card to update.",competitive_battlecards,new,Claude (battlecard-refresh),https://example.com/canon/competitive_battlecards

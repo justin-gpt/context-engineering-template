@@ -1,0 +1,8 @@
+{
+  "name": "client-context",
+  "version": "1.0.0",
+  "description": "Consultancy pattern: load one client's context contract and project manifest, refuse every source outside the client boundary, draft status rows, and gate anything that reaches a portal.",
+  "author": { "name": "Justin GPT", "url": "https://justingpt.ai" },
+  "license": "MIT",
+  "keywords": ["consultancy", "client-isolation", "contract", "manifest", "portal"]
+}

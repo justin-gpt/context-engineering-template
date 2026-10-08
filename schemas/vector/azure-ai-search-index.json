@@ -1,0 +1,129 @@
+{
+  "_comment": "Context layer vector store on Azure AI Search, implementing schemas/vector/metadata-contract.md. 'index' is the index definition to PUT (strip the _comment keys and the example_* sections first; the service rejects unknown properties). The vector field uses an HNSW profile with cosine similarity to match the other stores in this folder. Fictional tenants only (Globex Logistics is CLIENT-001).",
+
+  "security_trimming_note": "Azure AI Search has no row-level security. Isolation is a filter the retrieval service adds to every query from the caller's identity: tenant_id eq '<tenant>' and search.in(visibility, '<scope>', ',') and status eq 'grounded'. The caller never writes the filter and the prompt never sees it. Use vectorFilterMode preFilter so the filter applies before the nearest-neighbour step and cannot be starved by another tenant's vectors. For a regulated client, or one that requires tenant-level isolation in its security review, create one index per tenant instead and keep the filter anyway. Audience is decided per index: an index client users can query holds only client_shared and public chunks.",
+
+  "index": {
+    "name": "context-layer",
+    "fields": [
+      { "name": "id",             "type": "Edm.String",  "key": true,  "searchable": false, "filterable": true,  "sortable": false, "facetable": false, "retrievable": true },
+      { "name": "tenant_id",      "type": "Edm.String",  "searchable": false, "filterable": true,  "sortable": false, "facetable": true,  "retrievable": true },
+      { "name": "source_system",  "type": "Edm.String",  "searchable": false, "filterable": true,  "sortable": false, "facetable": true,  "retrievable": true },
+      { "name": "source_id",      "type": "Edm.String",  "searchable": false, "filterable": true,  "sortable": false, "facetable": false, "retrievable": true },
+      { "name": "source_url",     "type": "Edm.String",  "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true },
+      { "name": "canonical_slug", "type": "Edm.String",  "searchable": false, "filterable": true,  "sortable": false, "facetable": true,  "retrievable": true },
+      { "name": "status",         "type": "Edm.String",  "searchable": false, "filterable": true,  "sortable": false, "facetable": true,  "retrievable": true },
+      { "name": "visibility",     "type": "Edm.String",  "searchable": false, "filterable": true,  "sortable": false, "facetable": true,  "retrievable": true },
+      { "name": "content_hash",   "type": "Edm.String",  "searchable": false, "filterable": true,  "sortable": false, "facetable": false, "retrievable": true },
+      { "name": "chunk_index",    "type": "Edm.Int32",   "searchable": false, "filterable": true,  "sortable": true,  "facetable": false, "retrievable": true },
+      { "name": "text",           "type": "Edm.String",  "searchable": true,  "filterable": false, "sortable": false, "facetable": false, "retrievable": true, "analyzer": "standard.lucene" },
+      { "name": "embedding",      "type": "Collection(Edm.Single)", "searchable": true, "filterable": false, "sortable": false, "facetable": false, "retrievable": false, "dimensions": 1536, "vectorSearchProfile": "context-hnsw-profile" },
+      { "name": "token_count",    "type": "Edm.Int32",   "searchable": false, "filterable": true,  "sortable": false, "facetable": false, "retrievable": true },
+      { "name": "generated_at",   "type": "Edm.DateTimeOffset", "searchable": false, "filterable": true, "sortable": true, "facetable": false, "retrievable": true },
+      { "name": "last_synced_at", "type": "Edm.DateTimeOffset", "searchable": false, "filterable": true, "sortable": true, "facetable": false, "retrievable": true },
+      { "name": "metadata",       "type": "Edm.String",  "searchable": false, "filterable": false, "sortable": false, "facetable": false, "retrievable": true }
+    ],
+    "vectorSearch": {
+      "algorithms": [
+        {
+          "name": "context-hnsw",
+          "kind": "hnsw",
+          "hnswParameters": {
+            "metric": "cosine",
+            "m": 4,
+            "efConstruction": 400,
+            "efSearch": 500
+          }
+        }
+      ],
+      "profiles": [
+        {
+          "name": "context-hnsw-profile",
+          "algorithm": "context-hnsw"
+        }
+      ]
+    },
+    "semantic": {
+      "configurations": [
+        {
+          "name": "context-semantic",
+          "prioritizedFields": {
+            "prioritizedContentFields": [ { "fieldName": "text" } ],
+            "prioritizedKeywordsFields": [ { "fieldName": "canonical_slug" } ]
+          }
+        }
+      ]
+    }
+  },
+
+  "field_notes": {
+    "_comment": "Why each field is shaped as it is; the same reasons as in metadata-contract.md, in Azure terms.",
+    "id": "Document key, deterministic: {source_system}:{source_id}#{chunk_index}. Keys may contain letters, digits, _ - = and must be URL-safe, so encode ':' and '#' (for example as '_') or use the base64 of the pattern consistently. Deterministic keys make re-ingestion a mergeOrUpload.",
+    "tenant_id": "Isolation key; filterable and facetable so an audit can count documents per tenant.",
+    "status": "Copied from the contract; the filter defaults to status eq 'grounded'. Deprecated documents are deleted, never left in the index.",
+    "visibility": "Copied from the contract; filtered with search.in against the caller's scope.",
+    "text": "Searchable with the standard analyzer so hybrid (keyword + vector) retrieval is possible. Returned with the match.",
+    "embedding": "Collection(Edm.Single), 1536 dimensions, not retrievable (saves bandwidth; vectors are never shown to callers). To change dimensions, create a new index and re-embed everything.",
+    "generated_at, last_synced_at": "Edm.DateTimeOffset so range filters and sorting work (last_synced_at desc, top 1 per tenant gives the freshness heartbeat).",
+    "metadata": "A JSON string for extras (heading_path, title) because the index has no free-form object type; not filterable. Promote a field to its own column when you need to filter on it. Never secrets, never personal data.",
+    "semantic": "Optional semantic configuration for reranking hybrid results; delete the 'semantic' block if the service tier does not include it."
+  },
+
+  "example_document": {
+    "_comment": "One document per chunk, uploaded with the mergeOrUpload action. The vector is truncated here.",
+    "value": [
+      {
+        "@search.action": "mergeOrUpload",
+        "id": "notion_p-readme_0",
+        "tenant_id": "CLIENT-001",
+        "source_system": "notion",
+        "source_id": "p-readme",
+        "source_url": "https://example.com/hubs/client-001/client_readme",
+        "canonical_slug": "client_readme",
+        "status": "grounded",
+        "visibility": "client_shared",
+        "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "chunk_index": 0,
+        "text": "Client README > Who we are. Globex Logistics engagement readme, chunk 0 ...",
+        "embedding": [0.0123, -0.0456, 0.0789],
+        "token_count": 412,
+        "generated_at": "2026-10-07T02:00:00Z",
+        "last_synced_at": "2026-10-08T02:00:00Z",
+        "metadata": "{\"heading_path\": \"Client README > Who we are\", \"title\": \"Client README\"}"
+      }
+    ]
+  },
+
+  "example_query": {
+    "_comment": "POST /indexes/context-layer/docs/search. Rule 1: tenant_id AND visibility AND status in the filter on every query, built by the service from the caller's identity. preFilter applies it before the vector search. select names the citation fields. Add 'search': '<question text>' for hybrid retrieval.",
+    "count": true,
+    "select": "id,source_url,canonical_slug,status,text,generated_at",
+    "filter": "tenant_id eq 'CLIENT-001' and search.in(visibility, 'client_shared,public', ',') and status eq 'grounded'",
+    "vectorFilterMode": "preFilter",
+    "vectorQueries": [
+      {
+        "kind": "vector",
+        "vector": [0.0123, -0.0456, 0.0789],
+        "fields": "embedding",
+        "k": 8
+      }
+    ],
+    "top": 8
+  },
+
+  "example_delete_source": {
+    "_comment": "Removing a deprecated or changed page: search with filter tenant_id eq 'CLIENT-001' and source_id eq 'p-readme' selecting id only, then post the ids with the delete action. Do this before uploading the new chunks of a changed page.",
+    "value": [
+      { "@search.action": "delete", "id": "notion_p-readme_0" },
+      { "@search.action": "delete", "id": "notion_p-readme_1" }
+    ]
+  },
+
+  "example_freshness_query": {
+    "_comment": "The heartbeat per tenant: newest last_synced_at among the tenant's documents.",
+    "filter": "tenant_id eq 'CLIENT-001'",
+    "orderby": "last_synced_at desc",
+    "select": "last_synced_at,generated_at",
+    "top": 1
+  }
+}

@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/context-engineering/schemas/project-manifest.schema.json",
+  "title": "Project manifest (one per deployment)",
+  "description": "Narrows a client context contract to the pages, systems, skills, writes and approvals ONE deployment needs, and names the rollback before the deployment goes to canary. Versioned with the release. Reusable skills and plugins are global releases; only the overlay skill carries this client's rules, and client credentials never enter any package: the manifest holds a credential REFERENCE, never a secret. Reference: docs/formats.md section 3.",
+  "$comment": "Dates are strings in ISO 8601 form; convert YAML date objects before validating. Cross-key checks the schema cannot express and the sync or release gate performs: client_id and engagement_id must match the client contract this manifest narrows; context.client_contract_version must equal that contract's contract_version; every deployment_id must appear in the client contract's approved_agents; rollback.previous_release must differ from release; owner and backup_owner should be different roles.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "deployment_id",
+    "client_id",
+    "engagement_id",
+    "project_ids",
+    "agent_id",
+    "release",
+    "risk_class",
+    "owner",
+    "backup_owner",
+    "context",
+    "skills",
+    "integrations",
+    "writes",
+    "rollback"
+  ],
+  "properties": {
+    "deployment_id": {
+      "$ref": "#/$defs/prefixedId",
+      "description": "Registry id of this deployment (DEPLOY-001). One manifest per deployment; the same agent deployed for two clients is two deployments with two manifests."
+    },
+    "client_id": {
+      "$ref": "#/$defs/prefixedId",
+      "description": "The tenant this deployment serves (CLIENT-001). Must match the client contract and is the only tenant_id the deployment may query in any index."
+    },
+    "engagement_id": {
+      "$ref": "#/$defs/prefixedId",
+      "description": "The engagement (ENG-001) that pays for and governs the deployment."
+    },
+    "project_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/prefixedId" },
+      "description": "Projects inside the engagement this deployment may touch (PROJ-001). Must be a subset of the client contract's approved_agents entry for this deployment."
+    },
+    "agent_id": {
+      "type": "string",
+      "pattern": "^[A-Z]+-[A-Za-z0-9._-]+$",
+      "description": "The reusable agent definition being deployed (AGENT-lead-router). The definition is global; everything client-specific lives in this manifest and the overlay skill."
+    },
+    "release": {
+      "$ref": "#/$defs/versionString",
+      "description": "Release of the deployment this manifest describes (1.2.0). Quote it in YAML. Bump the release whenever this file changes; the manifest and the release travel together."
+    },
+    "risk_class": {
+      "type": "string",
+      "enum": ["read_only", "draft_write", "controlled_write", "external_action"],
+      "description": "How much damage a wrong run could do, which sets the approval mode. read_only: reads and reports, writes nothing. draft_write: writes only to draft surfaces a human reviews. controlled_write: writes to a live system inside listed limits. external_action: sends, posts or pays outside the tenant. Higher classes need an evaluation suite and tighter approval_required."
+    },
+    "owner": {
+      "$ref": "#/$defs/role",
+      "description": "The ROLE accountable for the deployment (engagement_lead). Never a person."
+    },
+    "backup_owner": {
+      "$ref": "#/$defs/role",
+      "description": "The ROLE that acts when the owner is unavailable (agent_operator). Should differ from owner; a kill switch with one keyholder is a single point of failure."
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "client_contract_version",
+        "project_manifest_version",
+        "allowed_page_ids",
+        "allowed_data_sources",
+        "prohibited_sources"
+      ],
+      "description": "What the deployment may read. Narrower than the client contract on purpose: an agent that routes leads does not need the engagement scope page.",
+      "properties": {
+        "client_contract_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The client contract version this manifest was approved against. When the contract bumps, every manifest pinned to the old version is re-reviewed before it runs again."
+        },
+        "project_manifest_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Shape version of the manifest format itself, so a runner can refuse a manifest it does not understand."
+        },
+        "allowed_page_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Page ids (never titles) from the client contract's canonical_pages this deployment may load. Every deployment reads at least the client's control page."
+        },
+        "allowed_data_sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Live systems the deployment may query, written as system:tenant:object (mode), for example 'crm:client-001:leads (read)'. Naming the tenant in the string makes a cross-tenant query visible in review."
+        },
+        "prohibited_sources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "contains": { "const": "cross_client_content" },
+          "description": "Sources the deployment must refuse even if a tool offers them. Must include cross_client_content; the sample also lists unapproved_drafts and consultancy_hq. Spelling the prohibition out lets a runner assert it, not just hope for it."
+        }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/versionedComponent" },
+      "description": "Skills the deployment runs, each pinned to a version: reusable global skills plus at most one client overlay skill that carries only this client's rules and context pointers."
+    },
+    "plugins": {
+      "type": "array",
+      "uniqueItems": true,
+      "default": [],
+      "items": { "$ref": "#/$defs/versionedComponent" },
+      "description": "Optional tool plugins, each pinned to a version. Omit or leave empty when the agent uses no plugins."
+    },
+    "integrations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/integration" },
+      "description": "External systems the deployment connects to, each through a least-privilege identity referenced by name. Required even when empty so 'no integrations' is a statement, not an omission."
+    },
+    "writes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_surfaces", "allowed_operations", "approval_required"],
+      "description": "What the deployment may change and what always needs a human. Together with risk_class this is the approval mode in machine-readable form.",
+      "properties": {
+        "allowed_surfaces": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The only places the deployment may write (a CRM review field, a work-items database restricted to Agent (draft) rows). Must be empty for risk_class read_only."
+        },
+        "allowed_operations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "description": "Named operations the deployment may perform without asking (propose_owner, queue_exception, create_draft, report_gap). An operation not listed here or under approval_required is not allowed at all."
+        },
+        "approval_required": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "description": "Operations that always stop for a human (assign_owner_of_record, publish_to_client, external_action). Non-empty by rule: every deployment has at least one action it must not take alone."
+        }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suite", "minimum_score", "last_passed"],
+      "description": "The evaluation gate the release passed. Required for every risk class above read_only: a deployment that can write must prove itself before canary.",
+      "properties": {
+        "suite": {
+          "type": "string",
+          "pattern": "^[A-Z]+-[A-Za-z0-9._-]+$",
+          "description": "Id of the evaluation suite (EVAL-lead-routing-v3), versioned like a skill so a score is comparable across releases."
+        },
+        "minimum_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Score the release must reach to ship, as a fraction (0.95). Set per risk class; raise it before widening write scope."
+        },
+        "last_passed": {
+          "$ref": "#/$defs/isoDate",
+          "description": "ISO date the current release last passed the suite. A release that has not passed since its last change does not leave sandbox."
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["previous_release", "kill_switch_owner", "disable_steps"],
+      "description": "Named before canary, not during an incident. If this block is hard to fill in, the deployment is not ready.",
+      "properties": {
+        "previous_release": {
+          "$ref": "#/$defs/versionString",
+          "description": "The release to return to (1.1.4). Must differ from release; the first release of a new deployment rolls back to disabled, written as 0.0.0."
+        },
+        "kill_switch_owner": {
+          "$ref": "#/$defs/role",
+          "description": "The ROLE that can disable the deployment at any hour without asking anyone (agent_operator)."
+        },
+        "disable_steps": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where the disable procedure lives, as a reference the on-call can open (runbook://client-001/lead-router/disable). A pointer, so the steps are maintained in one place."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "risk_class": { "const": "read_only" } },
+        "required": ["risk_class"]
+      },
+      "then": {
+        "properties": {
+          "writes": {
+            "properties": {
+              "allowed_surfaces": { "maxItems": 0 }
+            }
+          }
+        }
+      },
+      "else": {
+        "required": ["evaluation"]
+      }
+    }
+  ],
+  "$defs": {
+    "prefixedId": {
+      "type": "string",
+      "pattern": "^[A-Z]+-[0-9]+$",
+      "description": "An operational identifier: uppercase prefix, hyphen, digits (DEPLOY-001, CLIENT-001, ENG-001, PROJ-001)."
+    },
+    "versionString": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+){0,2}([-+][0-9A-Za-z.-]+)?$",
+      "description": "A version as a string (1.2.0, 0.3.0, 2.0.1-rc1). Quote it in YAML so it does not parse as a number."
+    },
+    "isoDate": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "An ISO 8601 calendar date (YYYY-MM-DD) as a string."
+    },
+    "role": {
+      "type": "string",
+      "minLength": 2,
+      "description": "A role name (engagement_lead, agent_operator, principal), never a person."
+    },
+    "versionedComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Z]+-[A-Za-z0-9._-]+$",
+          "description": "Component id with a type prefix (SKILL-lead-routing-core, PLUGIN-crm-tools). Client overlay skills name the client id in the slug (SKILL-client-001-routing-overlay) so a reviewer can see they are not reusable."
+        },
+        "version": {
+          "$ref": "#/$defs/versionString",
+          "description": "Pinned version. Unpinned components make a rollback meaningless."
+        }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "credential_reference", "read_scope", "write_scope"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Z]+-[A-Za-z0-9._-]+$",
+          "description": "Integration id naming the client and the system (INT-client-001-crm)."
+        },
+        "credential_reference": {
+          "type": "string",
+          "pattern": "^(secret-manager|vault|aws-secrets|gcp-secrets|azure-keyvault|1password)://[A-Za-z0-9][A-Za-z0-9._~/@:+-]*$",
+          "description": "WHERE the runtime fetches the credential, never the credential itself: a path in a secret manager such as secret-manager://clients/client-001/crm-service-identity. The pattern requires a scheme prefix (secret-manager://, vault://, aws-secrets://, gcp-secrets://, azure-keyvault://, 1password://) so that a pasted API key, token or password cannot validate: a raw secret has no scheme, and this file is committed to version control, exported with the mirror and read by every reviewer. Add your own scheme to the pattern if your secret store is not listed; never widen it to a bare string."
+        },
+        "read_scope": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the identity may read, in words a reviewer can check against the system's permission screen ('contacts, companies, deals (client tenant only)')."
+        },
+        "write_scope": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the identity may write, as narrowly as the system allows ('contacts.proposed_owner (review field only)'). Write 'none' for a read-only identity so the absence of writes is explicit."
+        }
+      }
+    }
+  }
+}

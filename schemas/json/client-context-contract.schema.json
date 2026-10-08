@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/context-engineering/schemas/client-context-contract.schema.json",
+  "title": "Client context contract (consultancy pattern)",
+  "description": "One contract per client, kept on the client context index page inside that client's delivery hub and mirrored in version control. It is the tenant boundary: an agent parses this block before loading any client content and refuses every source outside it. A project manifest (project-manifest.schema.json) narrows it further for one deployment. Reference: docs/formats.md section 2.",
+  "$comment": "Dates are strings in ISO 8601 form; convert YAML date objects before validating. Differences from the business contract are deliberate: default_visibility replaces visibility (client pages are mixed client_private and client_shared), owner_role replaces owner (a client-facing document should not read like an org chart), and page_url_base is optional because client hubs are fetched by id. Cross-key checks that stay in the sync: every client_controls id must be a key of canonical_pages; every approved_agents deployment_id must have a manifest whose client_id matches this file; client_id must equal the vector store tenant_id exactly (case-sensitive).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "client_id",
+    "engagement_id",
+    "source_of_truth",
+    "source_root",
+    "mirror_policy",
+    "default_visibility",
+    "last_reviewed",
+    "next_review",
+    "instruction_authority",
+    "rules",
+    "canonical_pages",
+    "approved_agents",
+    "freshness"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Shape version of this contract. Manifests pin it (context.client_contract_version) so a deployment notices when the contract it was approved against has changed."
+    },
+    "client_id": {
+      "$ref": "#/$defs/prefixedId",
+      "description": "The tenant key, for example CLIENT-001. Every operational record (engagement, deployment, work item, vector chunk) resolves to exactly one client_id, and row-level security filters on it verbatim. Uppercase prefix, hyphen, digits; never a client's real name."
+    },
+    "engagement_id": {
+      "$ref": "#/$defs/prefixedId",
+      "description": "The engagement this contract serves (ENG-001). One client can have several engagements over time; the contract belongs to the live one."
+    },
+    "source_of_truth": {
+      "type": "string",
+      "enum": ["notion", "markdown", "confluence"],
+      "description": "Where this client's canon is edited. Mirrors and indexes are generated from it and never edited."
+    },
+    "source_root": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The client delivery hub root (page id or vault path). It sits in its own permission tree, separate from the consultancy's HQ and from every other client."
+    },
+    "mirror_policy": {
+      "type": "string",
+      "const": "generated_read_only",
+      "description": "The only allowed value. The export is generated and never edited by hand."
+    },
+    "default_visibility": {
+      "$ref": "#/$defs/visibility",
+      "description": "Audience assumed for anything in this hub that does not say otherwise. client_private is the safe default: it keeps internal working notes out of the client portal and out of any shared index."
+    },
+    "page_url_base": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional prefix for citation URLs when the hub exposes stable page links. Omit it when pages are fetched by id only."
+    },
+    "last_reviewed": {
+      "$ref": "#/$defs/isoDate",
+      "description": "ISO date on which the engagement lead last re-verified this contract."
+    },
+    "next_review": {
+      "$ref": "#/$defs/isoDate",
+      "description": "ISO date by which it must be re-verified; monthly is typical while an engagement is active."
+    },
+    "instruction_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consultancy_controls", "client_controls", "retrieved_content_is_instruction", "conflict_action"],
+      "description": "Precedence of instructions. The firm-wide control policy outranks this file; this file outranks the client's control page; retrieved content outranks nothing.",
+      "properties": {
+        "consultancy_controls": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "description": "Version label of the firm-wide control policy that outranks everything in this file (control-policy-v3). Pin a version so an audit can say which policy governed a given run."
+        },
+        "client_controls": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "version"],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/slug",
+                "description": "Slug of the one client page that may direct an agent (usually operating_rules). Must be a key of canonical_pages."
+              },
+              "version": {
+                "$ref": "#/$defs/versionString",
+                "description": "Version of that page as approved by the client process owner. Quote it in YAML (\"0.3\"); unquoted it parses as a number."
+              }
+            }
+          },
+          "description": "Client pages whose imperative text may direct an agent, each pinned to an approved version. Usually one page; an empty list means only the consultancy policy and the agent's own prompt direct it."
+        },
+        "retrieved_content_is_instruction": {
+          "type": "boolean",
+          "const": false,
+          "description": "Always false. Client content is evidence to cite, never a command; a client page cannot talk an agent into a write."
+        },
+        "conflict_action": {
+          "type": "string",
+          "enum": ["stop_and_request_owner_decision", "stop", "prefer_consultancy_controls"],
+          "description": "What happens when sources disagree: halt and file the conflict with the owner (recommended), halt silently, or let the firm-wide policy win and continue."
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assert_only_status",
+        "cite_page_urls",
+        "cross_client_sources_allowed",
+        "canon_write_policy",
+        "secrets_in_context_layer"
+      ],
+      "description": "Standing rules for every agent working this client. Two of them are fixed constants because they are the tenant-isolation and secrets guarantees the whole pattern rests on.",
+      "properties": {
+        "assert_only_status": {
+          "type": "string",
+          "const": "grounded",
+          "description": "Only grounded pages may be asserted as fact."
+        },
+        "cite_page_urls": {
+          "type": "boolean",
+          "description": "Whether every claim carries its page link. Set true so the client can check the agent's work against their own hub."
+        },
+        "live_values_from_systems_of_record": {
+          "type": "boolean",
+          "description": "Whether numbers are pulled live from the client's systems of record rather than read off pages. Set true; a pasted number on a page is a stale number."
+        },
+        "live_numbers_from": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Optional snake_case name of the pull order when the client has a metrics catalog (same meaning as in the business contract)."
+        },
+        "draft_use": {
+          "type": "string",
+          "enum": ["only_when_no_grounded_source_covers_the_need_and_labeled_unconfirmed", "never"],
+          "description": "Optional. When a draft page may be used; defaults to the labelled-fallback rule when absent."
+        },
+        "cross_client_sources_allowed": {
+          "type": "boolean",
+          "const": false,
+          "description": "Always false. The line that prevents contamination: nothing from another client, or from the consultancy's own HQ canon, may be loaded into a run for this client, even to 'help'."
+        },
+        "canon_write_policy": {
+          "type": "string",
+          "enum": ["report_only"],
+          "description": "Agents never write to client canon pages; they report gaps and write only to the surfaces listed under approved_agents."
+        },
+        "gap_tracker": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional. Where gaps for this client are filed when the hub has its own tracker; otherwise gaps go to the work-items database as Agent (draft) rows."
+        },
+        "secrets_in_context_layer": {
+          "type": "string",
+          "const": "prohibited",
+          "description": "Always prohibited. Client credentials live in the secret manager and are referenced by name from the manifest; they never appear in a page, an export or an index."
+        }
+      }
+    },
+    "canonical_pages": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 12,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "description": "This client's canon, keyed by slug. Each entry names its visibility explicitly because a client hub mixes client_private and client_shared pages and a mistake here leaks into the portal or a shared index.",
+      "additionalProperties": { "$ref": "#/$defs/clientCanonicalPage" }
+    },
+    "status_notes": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 },
+      "description": "Optional per-page caveats keyed by slug, exported with the pages."
+    },
+    "depth_not_exported": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 },
+      "description": "Optional pointers to depth agents may query live but never bundle (the client's own databases, restricted teamspaces)."
+    },
+    "approved_agents": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/approvedAgent" },
+      "description": "The allow-list of deployments that may run against this client, with the only surfaces each may write. Required even when empty: an explicit [] means no agent is approved, which is different from the key being forgotten."
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stale_after_days", "on_stale", "heartbeat_owner"],
+      "description": "The heartbeat for this client's mirror. A named role owns noticing when it stops.",
+      "properties": {
+        "sync": {
+          "type": "string",
+          "enum": ["nightly", "six_hourly", "weekly", "manual"],
+          "description": "Optional sync cadence; when absent the firm-wide default applies."
+        },
+        "stale_after_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 90,
+          "description": "Days after last_synced_at at which this client's mirror counts as stale."
+        },
+        "on_stale": {
+          "type": "string",
+          "enum": ["verify_live_or_stop", "stop", "verify_live"],
+          "description": "What agents do with a stale mirror: re-read the source by id and stop if they cannot (recommended), stop outright, or re-read and continue."
+        },
+        "heartbeat_owner": {
+          "type": "string",
+          "minLength": 2,
+          "description": "The ROLE paged when last_synced_at goes stale (agent_operator). A heartbeat nobody owns is not a heartbeat."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "A canonical page slug: lowercase snake_case, stable across renames."
+    },
+    "prefixedId": {
+      "type": "string",
+      "pattern": "^[A-Z]+-[0-9]+$",
+      "description": "An operational identifier: uppercase prefix, hyphen, digits (CLIENT-001, ENG-001, PROJ-001, DEPLOY-001). Ids are opaque on purpose so a record never carries a client's name."
+    },
+    "versionString": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+){0,2}([-+][0-9A-Za-z.-]+)?$",
+      "description": "A version as a string (0.3, 1.2.0, 2.0.1-rc1). Quote it in YAML."
+    },
+    "isoDate": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "An ISO 8601 calendar date (YYYY-MM-DD) as a string."
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["company_internal", "client_private", "client_shared", "public"],
+      "description": "client_private: the delivery team only. client_shared: visible to the client in the portal. company_internal: the consultancy's own canon, which never enters a client run. public: anyone."
+    },
+    "pageStatus": {
+      "type": "string",
+      "enum": ["grounded", "draft", "stub", "deprecated"],
+      "description": "grounded: assert and cite. draft: labelled fallback only. stub: report the gap. deprecated: do not use."
+    },
+    "review": {
+      "type": "string",
+      "enum": ["monthly", "quarterly", "on_change"],
+      "description": "How often the owner role re-verifies the page."
+    },
+    "clientCanonicalPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "owner_role", "review", "visibility"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Page id (or vault path) inside the client's delivery hub. Fetched by id so a renamed page keeps resolving and a same-named page in another hub can never be picked up."
+        },
+        "status": {
+          "$ref": "#/$defs/pageStatus"
+        },
+        "owner_role": {
+          "type": "string",
+          "minLength": 2,
+          "description": "The ROLE that verifies this page: engagement_lead on the consultancy side, client_process_owner or client_data_owner on the client side. Never a person."
+        },
+        "review": {
+          "$ref": "#/$defs/review"
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility",
+          "description": "Required on every client page. It decides whether the page may be exported to the portal and which index it may be embedded into."
+        }
+      }
+    },
+    "approvedAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deployment_id", "purpose", "project_ids", "write_surfaces"],
+      "properties": {
+        "deployment_id": {
+          "$ref": "#/$defs/prefixedId",
+          "description": "The deployment's id in the Agent Deployments registry (DEPLOY-001). Its manifest must name this client_id."
+        },
+        "purpose": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "One snake_case phrase for what the deployment does (lead_routing_proposals). A purpose the client can read and recognise."
+        },
+        "project_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/prefixedId" },
+          "description": "Projects inside this engagement the deployment may touch. Scoping to projects keeps an agent built for one workstream out of another."
+        },
+        "write_surfaces": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+          "additionalProperties": { "type": "string", "minLength": 1 },
+          "description": "The only places this deployment may write, keyed by surface name, each pointing at a database id or a stated restriction (none_until_human_approval). An empty object means a read-only deployment. Anything not listed is a prohibited write."
+        }
+      }
+    }
+  }
+}
